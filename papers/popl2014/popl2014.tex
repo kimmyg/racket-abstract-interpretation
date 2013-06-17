@@ -65,8 +65,33 @@ keyword1, keyword2
 
 \section{Introduction}
 
-The text of the paper begins here.
+The CFA family of analyses [cite k-CFA, gamma-CFA, mu-CFA, etc.] promise to enhance [wc] program efficiency [cite], security [cite], and correctness [cite].
 
+…
+
+Racket programs are organized into modules.
+Interaction between different parts of the program is vetted through the module boundary.
+An \texttt{import} declaration imports every definition explicitly \texttt{provide}d within the imported module.
+
+While modules are great for managing program complexity, they limit the comprehensiveness of an analysis in the same way … [that inter-procedural analysis enables optimizations otherwise unattainable].
+To combat this, modules are first compiled to a high-level intermediate bytecode form and programs are \textit{demodularized} to remove boundaries.
+Finally, a demodularized bytecode program is decompiled to a small set of core forms.
+[move the following discussion]
+These include lambdas, apply-values, define-values, etc.
+The compiler performs certain base optimizations such as constant folding [and …] and tracks certain flow information [example], some of which it discovers too late in the compilation process.
+This information is propagated to the decompiler and the resultant core forms are annotated with source information and flow metadata potentially useful to a program optimizer.
+
+\section{Method}
+
+The kernel (not the same as core) language of Racket--the language of the VM--contains over 1000 primitives: arithmetic primitives such as \texttt{+}, \texttt{sqrt}, and \texttt{quotient}; I/O primitives such as \texttt{current-print}, etc. We classify particular subsets of these according to pertinent behaviors.
+Included in this is domain checking.
+If the analyzer can prove that domain constraints are satisfied in a particular context, the checking can be discarded in all instances of that context.
+
+Are parameters/continuation marks going to require anything special from the analyzer?
+
+\subsubsection{Contract Discharge}
+As values conceptually pass through this boundary, dynamic contracts may be attached to assist [wc] blame assignment in specification violations.
+Racket's higher-order contracts [cite] allow contracts to be attached to higher-order functions [and dynamically track blame through an arbitrary depth of higher-orderness] but impose a dynamic check at each invocation of the function. 
 \appendix
 \section{Appendix Title}
 
