@@ -2,7 +2,9 @@
 (require racket/match
          "decompile.rkt"
          "interp.rkt"
+         "load.rkt"
          "parse.rkt")
 
 (parameterize ([compile-context-preservation-enabled #t])
-  (interp (parse (decompile "tests/fact.rkt"))))
+  (let-values ([(con env str) (load (parse (decompile "tests/capturing-inner-define.rkt")))])
+    (interp con env str)))

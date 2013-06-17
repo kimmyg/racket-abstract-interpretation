@@ -2,7 +2,9 @@
 (require racket/list
          racket/match)
 
-(provide if
+(provide expr
+         ref
+         if
          begin
          module
          quote
@@ -12,10 +14,12 @@
          lambda
          apply-values
          application
+         sfs-clear
          param-ids
          rest-id)
 
 (struct expr () #:transparent)
+(struct ref expr (id) #:transparent)
 (struct if expr (test-expr con-expr alt-expr) #:transparent)
 (struct begin expr (es) #:transparent)
 (struct module expr (name language forms) #:transparent)
@@ -26,6 +30,7 @@
 (struct lambda expr (context flags params rest body) #:transparent)
 (struct apply-values expr (procedure expression) #:transparent)
 (struct application expr (function arguments) #:transparent)
+(struct sfs-clear expr (expression) #:transparent)
 
 (define param-ids
   (match-lambda

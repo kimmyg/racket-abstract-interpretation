@@ -2,51 +2,13 @@
 (require racket/list
          racket/match
          racket/package
-         [prefix-in e: "forms.rkt"])
+         [prefix-in e: "forms.rkt"]
+         "dynamic-closure.rkt"
+         "static-closure.rkt"
+         "env.rkt"
+         "store.rkt")
 
 (provide interp)
-
-(struct closure (lam env) #:transparent)
-
-(define empty-env empty)
-(define empty-store empty)
-(define empty-cont empty)
-
-
-(define-package env (empty-env
-                     env-extend
-                     ;env-extend!
-                     env-ref)
-  (define (empty-env)
-    (make-hasheq))
-  
-  (define (env-extend env params rest vs)
-    (let ([env (for/fold ([env env])
-                 ([x params]
-                  [v (take vs (length params))])
-                 (hash-set env x v))])
-      (if rest
-          (hash-set env rest (drop vs (length params)))
-          env)))
-  
-  #;(define (env-extend! env params rest vs)
-    (for ([x params]
-          [v (take vs (length params))])
-      (hash-set! env x v))
-    (begin0
-      env
-      (when rest
-        (hash-set! env rest (drop vs (length params))))))
-  
-  (define env-ref hash-ref))
-
-(define-package store (empty-store store-set store-ref)
-  (define (empty-store)
-    (hasheq))
-  
-  (define store-set hash-set)
-  
-  (define store-ref hash-ref))
 
 (define-package cont (empty-cont
                       if-cont
@@ -84,19 +46,13 @@
   (match p
     [(? procedure?)
      (procedure-arity-includes? p n)]
-    [(closure (e:lambda _ _ params rest _) _)
-     (if rest
-         (>= n (length params))
-         (= n (length params)))]))
-
-(define primitive
-  (match-lambda
-    ['zero?
-     zero?]
-    ['*
-     *]
-    [x
-     (error 'primitive "~a not implemented" x)]))
+    [(or (static-closure (e:lambda _ _ params rest _))
+         (dynamic-closure (e:lambda _ _ params rest _) _))
+     (or (= n (length params))
+         (and rest
+              (> n (length params))))]
+    [v
+     (error 'procedure-arity-includes?* "expected procedure; got ~a" v)]))
 
 (define (call f vs)
   (let ([vs (call-with-values (λ () (apply f vs)) list)])
@@ -104,44 +60,35 @@
         (single-value (first vs))
         (multiple-values vs))))
 
-(define (interp e)
-  (open-package env)
-  (open-package store)
+(define (env/store-extend env str params rest vs)
+  (let-values ([(env str)
+                (for/fold ([env env]
+                           [str str])
+                  ([x params]
+                   [v vs])
+                  (let*-values ([(str addr) (store-set str v)]
+                                [(env) (env-set env x addr)])
+                    (values env str)))])
+    (if rest
+        (let*-values ([(str addr) (store-set str (drop vs (length params)))]
+                      [(env) (env-set env rest addr)])
+          (values env str))
+        (values env str))))
+
+; closed forms are "global" references
+; see the documentation on core forms
+; and the output of capturing-inner-defines.rkt
+
+(define (interp con env str)
+  (define base-env env)
   (open-package cont)
-  (define (inner con [env (empty-env)] [str (empty-store)] [kon (empty-cont)])
-    (displayln con)
+  (define (inner con env str kon)
+    ;(displayln con)
+    ;(displayln env)
+    ;(displayln str)
     (match con
       [(? value? v)
        (match kon
-         [(empty-cont)
-          v]
-         [(if-cont con-expr alt-expr env kon)
-          (if (single-value-v v)
-              (inner con-expr env str kon)
-              (inner alt-expr env str kon))]
-         [(module-cont (list) kon)
-          (inner v env str kon)]
-         [(module-cont (cons f fs) kon)
-          (inner f env str (module-cont fs kon))]
-         [(define-values-cont ids env kon)
-          (inner (single-value (void)) (env-extend env ids #f (value->list v)) str kon)]
-         [(apply-proc-cont expr env kon)
-          (inner expr env str (apply-expr-cont (single-value-v v) env kon))]
-         [(apply-expr-cont proc env kon)
-          (let ([vs (value->list v)])
-            (match proc
-              [(? procedure?)
-               (inner (call proc vs) env str kon)]
-              [(closure (e:lambda _ _ params rest body) env)
-               (inner body (env-extend env params rest vs) str kon)]))]
-         [(app-fun-cont (list) env kon)
-          (match v
-            [(single-value (? procedure? p))
-             (inner (p) env str kon)]
-            [(single-value (closure (e:lambda _ _ params rest? body) env))
-             (inner body env str kon)])]
-         [(app-fun-cont (cons e es) env kon)
-          (inner e env str (app-arg-cont (single-value-v v) empty es env kon))]
          [(app-arg-cont fun vs (cons e es) env kon)
           (inner e env str (app-arg-cont fun (cons (single-value-v v) vs) es env kon))]
          [(app-arg-cont fun vs (list) env kon)
@@ -150,34 +97,88 @@
                 (match fun
                   [(? procedure?)
                    (inner (call fun vs) env str kon)]
-                  [(closure (e:lambda _ _ params rest body) env)
-                   (inner body (env-extend env params rest vs) str kon)])
-                (error 'interp "incompatible function arity for ~a" vs)))]
-         ;[_
-          ;(error 'interp "v is ~a; no match for ~a" v kon)]
+                  [(dynamic-closure (e:lambda _ _ params rest body) env)
+                   (let-values ([(env str) (env/store-extend env str params rest vs)])
+                     (inner body env str kon))]
+                  [(static-closure (e:lambda _ _ params rest body))
+                   (let-values ([(env str) (env/store-extend env str params rest vs)])
+                     (inner body env str kon))])
+                (error 'interp "incompatible function arity applying ~a to ~a" fun vs)))]
+         [(app-fun-cont (list) env kon)
+          (match v
+            [(single-value fun)
+             (if (procedure-arity-includes?* fun 0)
+                 (match fun
+                  [(? procedure?)
+                   (inner (call fun empty) env str kon)]
+                  [(dynamic-closure (e:lambda _ _ params rest body) env)
+                   (inner body env str kon)]
+                  [(static-closure (e:lambda _ _ params rest body))
+                   (inner body base-env str kon)])
+                 (error 'interp "incompatible function arity applying ~a to no arguments" fun))]
+            [(multiple-values vs)
+             (error 'interp "expected single function; got ~a" vs)])]
+         [(app-fun-cont (cons e es) env kon)
+          (inner e env str (app-arg-cont (single-value-v v) empty es env kon))]
+         [(apply-proc-cont expr env kon)
+          (inner expr env str (apply-expr-cont (single-value-v v) env kon))]
+         [(apply-expr-cont proc env kon)
+          (let ([vs (value->list v)])
+            (match proc
+              [(? procedure?)
+               (inner (call proc vs) env str kon)]
+              [(dynamic-closure (e:lambda _ _ params rest body) env)
+               (let-values ([(env str) (env/store-extend env str params rest vs)])
+                 (inner body env str kon))]
+              [(static-closure (e:lambda _ _ params rest body))
+               (let-values ([(env str) (env/store-extend base-env str params rest vs)])
+                 (inner body env str kon))]))]
+         [(begin-cont (list) env kon)
+          (inner v env str kon)]
+         [(begin-cont (cons e es) env kon)
+          (inner e env str (begin-cont es env kon))]
+         [(define-values-cont ids env kon)
+          (let-values ([(env str) (env/store-extend env str ids #f (value->list v))])
+            (inner (single-value (void)) env str kon))]
+         [(empty-cont)
+          v]
+         [(if-cont con-expr alt-expr env kon)
+          (match v
+            [(single-value v)
+             (if v
+                 (inner con-expr env str kon)
+                 (inner alt-expr env str kon))]
+            [(multiple-values vs)
+             (error 'interp "expected single value for test; got ~a" vs)])]
+         [(module-cont (list) kon)
+          (inner v env str kon)]
+         [(module-cont (cons f fs) kon)
+          (inner f env str (module-cont fs kon))]
+         [_
+         (error 'interp "v is ~a; no match for ~a" v kon)]
          )]
-      [(? symbol? x)
-       (inner (single-value (env-ref env x (λ () (primitive x)))) env str kon)]
-      [(? number? n)
-       (inner (single-value n) env str kon)]
-      [(e:if cond-expr con-expr alt-expr)
-       (inner cond-expr env str (if-cont con-expr alt-expr env kon))]
-      [(e:begin (cons e es))
-       (inner e env str (begin-cont es env kon))]
-      [(e:module name language (cons f fs))
-       (inner f env str (module-cont fs kon))]
-      [(e:require modules)
-       (inner (single-value (void)) env str kon)]
-      [(e:define-values ids rhs)
-       (inner rhs env str (define-values-cont ids env kon))]
-      [(e:closed name lambda)
-       (inner (single-value (closure lambda env)) env str kon)]
-      [(and lambda (e:lambda _ _ _ _ _))
-       (inner (single-value (closure lambda env)) env str kon)]
-      [(e:apply-values procedure expression)
-       (inner procedure env str (apply-proc-cont expression env kon))] 
       [(e:application function arguments)
        (inner function env str (app-fun-cont arguments env kon))]
+      [(e:apply-values procedure expression)
+       (inner procedure env str (apply-proc-cont expression env kon))]
+      [(e:begin (cons e es))
+       (inner e env str (begin-cont es env kon))]
+      [(e:define-values ids rhs)
+       (inner rhs env str (define-values-cont ids env kon))]
+      [(e:if cond-expr con-expr alt-expr)
+       (inner cond-expr env str (if-cont con-expr alt-expr env kon))]
+      [(and lambda (e:lambda _ _ _ _ _))
+       (inner (single-value (dynamic-closure lambda env)) env str kon)]
+      [(e:module name language (cons f fs))
+       (inner f env str (module-cont fs kon))]
+      [(e:quote v)
+       (inner (single-value v) env str kon)]
+      [(e:ref x)
+       (inner (single-value (store-ref str (env-ref env x))) env str kon)]
+      [(e:sfs-clear e)
+       (inner e env str kon)]
+      [(e:require modules)
+       (inner (single-value (void)) env str kon)]
       [e
        (error 'interp "unrecognized form ~a" e)]))
-  (inner e))
+  (inner con env str (empty-cont)))
