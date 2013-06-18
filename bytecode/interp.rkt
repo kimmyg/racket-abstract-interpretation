@@ -58,6 +58,8 @@
 
 (define primitive-lookup
   (match-lambda
+    ['*
+     *]
     ['apply
      apply]
     ['current-print
@@ -192,6 +194,9 @@
        (inner code env str kon)]
       [(def-values* ids rhs)
        (inner rhs env str (def-values-cont ids env kon))]
+      [(and lam (lam* name flags params param-types rest
+                      closed-ids max-let-depth body))
+       (inner (single-value (dynamic-closure lam env)) env str kon)]
       [(localref* unbox? id clear? other-clears? type)
        (inner (single-value (store-ref str (env-ref env id))) env str kon)]
       [(mod name srcname self-modidx prefix provides requires (cons f fs)

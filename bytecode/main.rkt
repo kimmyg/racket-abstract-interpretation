@@ -6,7 +6,7 @@
          "store.rkt"
          "interp.rkt")
 
-(define bc (with-input-from-file "../tests/capturing-inner-define_rkt_merged.zo" zo-parse))
+(define bc (with-input-from-file "../tests/fact_rkt_merged.zo" zo-parse))
 
 
 (let*-values ([(body closure-map) (load bc)]
