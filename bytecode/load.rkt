@@ -4,10 +4,7 @@
          compiler/zo-structs
          "static-closure.rkt")
 
-(provide load
-         static-ref)
-
-(struct static-ref expr (id) #:transparent)
+(provide load)
 
 (define (load e)
   (define seen-closures (seteq))
