@@ -6,11 +6,9 @@
          env-ref)
 
 (define (empty-env)
-  (make-hasheq))
+  (hasheq))
 
-(define (env-set env x v)
-  (hash-set! env x v)
-  env)
+(define env-set hash-set)
 
 (define (env-ref env x)
   (hash-ref env x (λ () (error 'env-ref "binding for ~a not found" x))))

@@ -1,19 +1,25 @@
 #lang racket/base
-(require compiler/zo-structs)
+(require (only-in compiler/zo-structs
+                  form
+                  expr
+                  application
+                  apply-values
+                  branch
+                  seq
+                  splice))
 
-(provide def-values*
-         
-         closure*
-         lam*
-         localref*
-         primval*
-         toplevel*
-         toplevel*-id)
+(provide (all-from-out compiler/zo-structs)
+         def-values
+         closure
+         lam
+         localref
+         primval
+         (struct-out toplevel))
 
-(struct def-values* form (ids rhs) #:transparent)
+(struct def-values form (ids rhs) #:transparent)
 
-(struct closure* expr (code gen-id) #:transparent)
-(struct lam* expr (name flags params param-types rest? closed-ids max-let-depth body) #:transparent)
-(struct localref* expr (unbox? id clear? other-clears? type) #:transparent)
-(struct primval* expr (id) #:transparent)
-(struct toplevel* expr (id const? ready?) #:transparent)
+(struct closure expr (code id) #:transparent)
+(struct lam expr (params rest body) #:transparent)
+(struct localref expr (id) #:transparent)
+(struct primval expr (id) #:transparent)
+(struct toplevel expr (id) #:transparent)

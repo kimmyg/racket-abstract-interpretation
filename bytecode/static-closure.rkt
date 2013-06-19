@@ -1,8 +1,8 @@
 #lang racket/base
 (require compiler/zo-structs)
 
-(provide static-closure
-         static-ref)
+(provide (struct-out static-closure)
+         (struct-out static-ref))
 
 (struct static-closure expr (lam) #:transparent)
 (struct static-ref expr (id) #:transparent)

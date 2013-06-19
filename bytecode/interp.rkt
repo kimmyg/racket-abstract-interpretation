@@ -2,7 +2,6 @@
 (require racket/list
          racket/match
          racket/package
-         compiler/zo-structs
          "env.rkt"
          "store.rkt"
          "interpreter-structs.rkt"
@@ -18,8 +17,8 @@
                               branch-cont
                               def-values-cont
                               empty-cont
-                              module-cont
-                              seq-cont)
+                              seq-cont
+                              splice-cont)
   (struct cont () #:transparent)
   
   (struct application-args-cont cont (fun vs args env cont) #:transparent)
@@ -29,8 +28,8 @@
   (struct branch-cont (then else env cont) #:transparent)
   (struct def-values-cont cont (ids env cont) #:transparent)
   (struct empty-cont cont () #:transparent)
-  (struct module-cont cont (fs cont) #:transparent)
-  (struct seq-cont cont (es env cont) #:transparent))
+  (struct seq-cont cont (es env cont) #:transparent)
+  (struct splice-cont cont (fs env cont) #:transparent))
 
 (define-package value (value?
                        single-value
@@ -99,10 +98,9 @@
 
 
 
-(define (interp con env str)
+(define (interp con env str) ; base environment
   (open-package continuation)
   (open-package value)
-  (define base-env env)
   (define (call fun args)
     (let ([vs (call-with-values (λ () (apply fun args)) list)])
       (if (= (length vs) 1)
@@ -112,13 +110,10 @@
     (match fun
       [(? procedure?)
        (inner (call fun args) env str kon)]
-      [(static-closure (lam* name flags params param-types rest
-                             closed-ids max-let-depth body))
+      [(static-closure (lam params rest body))
        (let-values ([(env str) (env/store-extend env str params rest args)])
          (inner body env str kon))]
-      [(dynamic-closure (lam* name flags params param-types rest
-                              closed-ids max-let-depth body)
-                        env)
+      [(dynamic-closure (lam params rest body) env)
        (let-values ([(env str) (env/store-extend env str params rest args)])
          (inner body env str kon))]
       [_
@@ -161,23 +156,26 @@
              (inner (if p then else) env str kon))
            v)]   
          [(def-values-cont ids env kon)
-          (let ([ids (map toplevel*-id ids)]
-                [vs (value->list v)])
+          (let ([vs (value->list v)])
             (if (= (length ids)
                    (length vs))
-                (let-values ([(env str) (env/store-extend env str ids #f vs)])
+                (let ([str (foldl
+                            (λ (tl v str)
+                              (let-values ([(str addr) (store-set str v (env-ref env (toplevel-id tl)))])
+                                str))
+                            str ids vs)])
                   (inner (single-value (void)) env str kon))
                 (error 'interp "expected ~a values; received ~a" (length ids) vs)))]
          [(empty-cont)
           v]
-         [(module-cont (cons f fs) kon)
-          (inner f env str (module-cont fs kon))]
-         [(module-cont (list) kon)
-          (inner v env str kon)]
          [(seq-cont (list) env kon)
           (inner v env str kon)]
          [(seq-cont (cons e es) env kon)
           (inner e env str (seq-cont es env kon))]
+         [(splice-cont (list) env kon)
+          (inner v env str kon)]
+         [(splice-cont (cons f fs) env kon)
+          (inner f env str (splice-cont fs env kon))]
          [_
           (error 'interp "unhandled continuation type: ~a" kon)])]
       [(? boolean? p)
@@ -190,26 +188,21 @@
        (inner proc env str (apply-values-proc-cont args-expr env kon))]
       [(branch test then else)
        (inner test env str (branch-cont then else env kon))]
-      [(compilation-top max-let-depth prefix code)
-       (inner code env str kon)]
-      [(def-values* ids rhs)
+      [(def-values ids rhs)
        (inner rhs env str (def-values-cont ids env kon))]
-      [(and lam (lam* name flags params param-types rest
-                      closed-ids max-let-depth body))
-       (inner (single-value (dynamic-closure lam env)) env str kon)]
-      [(localref* unbox? id clear? other-clears? type)
+      [(and lambda (lam params rest body))
+       (inner (single-value (dynamic-closure lambda env)) env str kon)]
+      [(localref id)
        (inner (single-value (store-ref str (env-ref env id))) env str kon)]
-      [(mod name srcname self-modidx prefix provides requires (cons f fs)
-            syntax-bodies unexported max-let-depth dummy lang-info
-            internal-context flags pre-submodules post-submodules)
-       (inner f env str (module-cont fs kon))]
-      [(primval* id)
+      [(primval id)
        (inner (single-value (primitive-lookup id)) env str kon)]
       [(seq (cons e es))
        (inner e env str (seq-cont es env kon))]
+      [(splice (cons f fs))
+       (inner f env str (splice-cont fs env kon))]
       [(static-ref id)
        (inner (single-value (store-ref str (env-ref env id))) env str kon)]
-      [(toplevel* id const? ready?)
+      [(toplevel id)
        (inner (single-value (store-ref str (env-ref env id))) env str kon)]
       [_
        (error 'interp "unhandled control type: ~a" con)]))
