@@ -9,9 +9,7 @@
   (define ((inner seen) e)
     (if (zo? e)
         (if (set-member? seen e)
-            (if (closure? e)
-                (seteq e)
-                (error 'find-cycle-points "cycle point not a closure: ~a" e))
+            (seteq e)
             (let ([inner0 (inner (set-add seen e))])
               (match e
                 [(application rator rands)
