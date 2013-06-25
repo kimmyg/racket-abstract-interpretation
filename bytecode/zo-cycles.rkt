@@ -3,7 +3,8 @@
          racket/set
          compiler/zo-structs)
 
-(provide cycle-points)
+(provide cycle-points
+         share-points)
 
 (define (cycle-points e)
   (define ((inner seen) e)
@@ -76,3 +77,8 @@
                             (inner0 body))])))
         (seteq)))
   ((inner (seteq)) e))
+
+(define (share-points e)
+  (error 'share-points "not implemented"))
+
+  

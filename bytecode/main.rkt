@@ -1,14 +1,19 @@
 #lang racket/base
 (require compiler/zo-parse
-         "load.rkt"
-         "interp.rkt")
+         "zo-cycles.rkt")
 
-(define (load-and-interp path)
+#;(define (load-and-interp path)
   (let ([bc (with-input-from-file path zo-parse)])
     ((compose interp load) bc)))
 
-(load-and-interp "../tests/fact_rkt_merged.zo")
-(load-and-interp "../tests/capturing-inner-define_rkt_merged.zo")
+;(decycle (with-input-from-file "../tests/fact_rkt_merged.zo" zo-parse))
+(cycle-points (with-input-from-file "../tests/capturing-inner-define_rkt_merged.zo" zo-parse))
+;(decycle (with-input-from-file "../tests/rsa_rkt_merged.zo" zo-parse))
+
+;(load-and-interp "../tests/fact_rkt_merged.zo")
+;(load-and-interp "../tests/capturing-inner-define_rkt_merged.zo")
+;(load-and-interp "../tests/length_rkt_merged.zo")
+;(load-and-interp "../tests/rsa_rkt_merged.zo")
 
 
 ; get bytecode
