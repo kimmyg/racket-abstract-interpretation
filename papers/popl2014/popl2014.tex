@@ -39,8 +39,8 @@
 \titlebanner{banner above paper title}        % These are ignored unless
 \preprintfooter{short description of paper}   % 'preprint' option specified.
 
-\title{Title Text}
-\subtitle{Subtitle Text, if any}
+\title{An Abstract Virtual Machine for Racket}
+\subtitle{(not as object-oriented as it sounds)}
 
 \authorinfo{Name1}
            {Affiliation1}
@@ -75,11 +75,11 @@ An \texttt{import} declaration imports every definition explicitly \texttt{provi
 
 While modules are great for managing program complexity, they limit the comprehensiveness of an analysis in the same way … [that inter-procedural analysis enables optimizations otherwise unattainable].
 To combat this, modules are first compiled to a high-level intermediate bytecode form and programs are \textit{demodularized} to remove boundaries.
-Finally, a demodularized bytecode program is decompiled to a small set of core forms.
-[move the following discussion]
-These include lambdas, apply-values, define-values, etc.
+%Finally, a demodularized bytecode program is decompiled to a small set of core forms.
+%[move the following discussion]
+%These include lambdas, apply-values, define-values, etc.
 The compiler performs certain base optimizations such as constant folding [and …] and tracks certain flow information [example], some of which it discovers too late in the compilation process.
-This information is propagated to the decompiler and the resultant core forms are annotated with source information and flow metadata potentially useful to a program optimizer.
+%This information is propagated to the decompiler and the resultant core forms are annotated with source information and flow metadata potentially useful to a program optimizer.
 
 \section{Method}
 
@@ -92,6 +92,25 @@ Are parameters/continuation marks going to require anything special from the ana
 \subsubsection{Contract Discharge}
 As values conceptually pass through this boundary, dynamic contracts may be attached to assist [wc] blame assignment in specification violations.
 Racket's higher-order contracts [cite] allow contracts to be attached to higher-order functions [and dynamically track blame through an arbitrary depth of higher-orderness] but impose a dynamic check at each invocation of the function. 
+
+\section{Racket bytecode}
+
+Instead of a sequence of instructions, Racket bytecode is a tree of bytecode forms.
+Literal values are represented directly and there is a fairly close correspondence between high-level core Racket and bytecode.
+For example, \texttt{begin} of core Racket becomes \texttt{seq}, \texttt{if} becomes \texttt{branch} and application becomes explicit with \texttt{application}.
+\texttt{lambda} is present in the bytecode as \texttt{lam} and augmented with explicit source, parameter, and variable-capture information.
+
+
+Our goal is to analyze all of Racket, so we must deal with all of its intricacies.
+
+Racket has grown atop a capable VM written in C which provides continuation-handling mechanisms (call/cc), structure things, macro expansion things, etc.
+
+
+
+For example, \texttt{letrec} compiles to a \texttt{let-void} form with an \texttt{install-value} subform. [verify]
+
+The extensive VM presents a difficulty in analyzing true and complete Racket. An analyzer must soundly emulate much of the behavior of the VM. 
+
 \appendix
 \section{Appendix Title}
 
