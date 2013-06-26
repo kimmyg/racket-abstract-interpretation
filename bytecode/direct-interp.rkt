@@ -72,6 +72,8 @@
                               branch-cont
                               empty-cont
                               def-values-cont
+                              install-value-cont
+                              let-one-cont
                               seq-cont
                               splice-cont)
   (struct cont () #:prefab)
@@ -82,6 +84,8 @@
   (struct branch-cont cont (then else env cont) #:prefab)
   (struct empty-cont cont () #:prefab)
   (struct def-values-cont cont (ids env cont) #:prefab)
+  (struct install-value-cont cont (count pos boxes? body env cont) #:prefab)
+  (struct let-one-cont cont (body env cont) #:prefab)
   (struct seq-cont cont (exprs env cont) #:prefab)
   (struct splice-cont cont (forms env cont) #:prefab))
 
@@ -101,21 +105,21 @@
         [(? procedure? p)
          (if (procedure-arity-includes? p n)
              (let ([vs (call-with-values (λ () (apply p args)) list)])
-               (inner (list->value vs) (drop env n) str kon))
+               (inner (list->value vs) env str kon))
              (error 'call "~a cannot accept ~a arguments" p n))]
         [(dynamic-closure (lam _ _ m _ rest? _ _ _ _ body) cls)
-         (if (or (= m n) (and rest? (> m n)))
+         (if (or (= n m) (and rest? (> n m)))
              (let* ([env (append (take args m) env)]
                     [env (if rest? (cons (drop args m) env) env)]
                     [env (append cls env)])
                (inner body env str kon))
-             (error 'call "closure with body ~a cannot accept ~a arguments" body n))]
-      [(static-closure (lam _ _ m _ rest? _ _ _ _ body))
-       (if (or (= m n) (and rest? (> m n)))
+             (error 'call "closure with ~a param(s) (rest is ~a) cannot accept ~a argument(s)" m rest? n))]
+        [(static-closure (lam _ _ m _ rest? _ _ _ _ body))
+         (if (or (= n m) (and rest? (> n m)))
              (let* ([env (append (take args m) env)]
                     [env (if rest? (cons (drop args m) env) env)])
                (inner body env str kon))
-             (error 'call "closure with body ~a cannot accept ~a arguments" body n))])))
+             (error 'call "closure with ~a param(s) (rest? is ~a) cannot accept ~a argument(s)" m rest? n))])))
        
   (define (inner con env str kon)
    #;(when (or (value? con)
@@ -130,8 +134,9 @@
           [(app-rands-cont rator n (list) env kon)
            (with-single-value
             (λ (arg)
-              (let ([env (env-set env n arg)])
-                (call rator (add1 n) env str kon)))
+              (let ([env (env-set env n arg)]
+                    [n (add1 n)])
+                (call rator (take env n) (drop env n) str kon)))
             con)]
           [(app-rands-cont rator n (cons expr exprs) env kon)
            (with-single-value
@@ -140,19 +145,21 @@
                 (inner expr env str (app-rands-cont rator (add1 n) exprs env kon)))) con)]
           [(app-rator-cont (list) env kon)
            (with-single-value
-            (λ (fun) (call fun 0 env str kon)) con)]
+            (λ (fun) (call fun empty env str kon)) con)]
           [(app-rator-cont (cons expr exprs) env kon)
            (with-single-value
             (λ (v) (inner expr env str (app-rands-cont v 0 exprs env kon))) con)]
           [(apply-values-args-cont proc env kon)
            (let ([vs (value->list con)])
-             (call proc (length vs) (append vs env) str kon))]
+             (call proc vs env str kon))]
           [(apply-values-proc-cont args-expr env kon)
            (with-single-value
             (λ (v) (inner args-expr env str (apply-values-args-cont v env kon))) con)]
           [(branch-cont then else env kon)
            (with-single-value
             (λ (v) (inner (if v then else) env str kon)) con)]
+          [(empty-cont)
+           con]
           [(def-values-cont ids env kon)
            (let ([vs (value->list con)])
              (if (= (length ids)
@@ -165,6 +172,32 @@
                              str ids vs)])
                    (inner (single-value (void)) env str kon))
                  (error 'interp "expected ~a values; received ~a" (length ids) vs)))]
+          [(install-value-cont count pos boxes? body env kon)
+           (let ([vs (value->list con)])
+             (if (= (length vs) count)
+                 (if boxes?
+                     (let ([str (for/fold ([str str])
+                                  ([addr (take (drop env pos) count)]
+                                   [v vs])
+                                  (let-values ([(str addr) (store-set str v addr)])
+                                    str))])
+                       (inner body env str kon))
+                     (let ([env (for/fold ([env env])
+                                  ([i count]
+                                   [v vs])
+                                  (env-set env (+ pos i) v))])
+                       (inner body env str kon)))
+                 (error 'interp "expected ~ values; receieved ~a" count vs)))]
+          [(let-one-cont body env kon)
+           (with-single-value
+            (λ (v)
+              (let ([env (env-set env 0 v)])
+                (inner body env str kon)))
+            con)]
+          [(seq-cont (list) env kon)
+           (inner con env str kon)]
+          [(seq-cont (cons expr exprs) env kon)
+           (inner expr env str (seq-cont exprs env kon))]
           [(splice-cont (list) env kon)
            (inner con env str kon)]
           [(splice-cont (cons form forms) env kon)
@@ -176,6 +209,12 @@
            (inner (single-value p) env str kon)]
           [(? number? n)
            (inner (single-value n) env str kon)]
+          [(? symbol? s)
+           (inner (single-value s) env str kon)]
+          [(? void? v)
+           (inner (single-value v) env str kon)]
+          [(? list? l)
+           (inner (single-value l) env str kon)]
           [(application rator rands)
            (let ([env (env-push env (length rands) (void))])
              (inner rator env str (app-rator-cont rands env kon)))]
@@ -183,16 +222,36 @@
            (inner proc env str (apply-values-proc-cont args-expr env kon))]
           [(branch test then else)
            (inner test env str (branch-cont then else env kon))]
+          [(case-lam name clauses)
+           (inner (single-value (dynamic-closure (case-lam name clauses) env)) env str kon)]
           [(closure lam gen-id)
            (inner (single-value (static-closure lam)) env str kon)]
           [(def-values ids rhs)
            (inner rhs env str (def-values-cont ids env kon))]
+          [(install-value count pos boxes? rhs body)
+           (inner rhs env str (install-value-cont count pos boxes? body env kon))]
           [(and l (lam _ _ _ _ _ captures _ _ _ _))
            (inner (single-value (dynamic-closure l (map (λ (i) (env-ref env i)) (vector->list captures))))
                   env str kon)]
+          [(let-one rhs body type unused?)
+           (let ([env (env-push env 1 (void))])
+             (inner rhs env str (let-one-cont body env kon)))]
+          [(let-void count boxes? body)
+           (if boxes?
+               (let-values ([(env str) (for/fold ([env env]
+                                                  [str str])
+                                         ([i count])
+                                         (let*-values ([(str addr) (store-set str (void))]
+                                                       [(env) (env-push env 1 addr)])
+                                           (values env str)))])
+                 (inner body env str kon))
+               (let ([env (env-push env count (void))])
+                 (inner body env str kon)))]
+               
           [(localref unbox? pos clear? other-clears? type)
            (inner (single-value (env-ref env pos)) env str kon)]
           [(primval id)
+           (displayln (primitive-id->name id))
            (inner (single-value (primitive-id->value id)) env str kon)]
           [(seq (cons expr exprs))
            (inner expr env str (seq-cont exprs env kon))]
@@ -202,6 +261,10 @@
            (inner (single-value (store-ref str (prefix-ref (env-ref env depth) pos)))
                   env str kon)]
           [_
+           (displayln con)
+           (displayln env)
+           ;(displayln str)
+           ;(displayln kon)
            (error 'inner "unhandled control ~a" con)])))
   (define (toplevel-allocate toplevels store)
     (for/fold ([pre (empty-prefix)]
@@ -225,4 +288,5 @@
 
 (module+ main
   (require compiler/zo-parse)
-  (interp (with-input-from-file "../tests/capturing-inner-define_rkt_merged.zo" zo-parse)))
+  #;(with-input-from-file "../tests/scheme-to-c_rkt_merged.zo" zo-parse)
+  (interp (with-input-from-file "../tests/scheme-to-c_rkt_merged.zo" zo-parse)))

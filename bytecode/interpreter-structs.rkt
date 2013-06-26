@@ -8,13 +8,14 @@
                   seq
                   splice))
 
-(provide (all-from-out compiler/zo-structs)
-         def-values
+(provide def-values
          closure
          lam
          localref
          primval
          (struct-out toplevel))
+
+(struct zo () #:prefab)
 
 (struct def-values form (ids rhs) #:transparent)
 
