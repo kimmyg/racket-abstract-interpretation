@@ -6,6 +6,10 @@
          "primitive-maps.rkt"
          "store.rkt")
 
+(define (primitive-id->value* id)
+  (displayln (primitive-id->name id))
+  (primitive-id->value id))
+
 (define (list-set l n v)
   (cond
     [(empty? l)
@@ -92,7 +96,7 @@
 (struct static-closure (lam) #:prefab)
 (struct dynamic-closure (lam cls) #:prefab)
 
-
+(require racket/format)
 
 (define (interp zo)
   (open-package prefixp)
@@ -103,6 +107,7 @@
     (let ([n (length args)])
       (match fun
         [(? procedure? p)
+         (printf "CALL: (~a)\n" p (apply ~a p args #:separator " "))
          (if (procedure-arity-includes? p n)
              (let ([vs (call-with-values (λ () (apply p args)) list)])
                (inner (list->value vs) env str kon))
@@ -251,8 +256,7 @@
           [(localref unbox? pos clear? other-clears? type)
            (inner (single-value (env-ref env pos)) env str kon)]
           [(primval id)
-           (displayln (primitive-id->name id))
-           (inner (single-value (primitive-id->value id)) env str kon)]
+           (inner (single-value (primitive-id->value* id)) env str kon)]
           [(seq (cons expr exprs))
            (inner expr env str (seq-cont exprs env kon))]
           [(splice (cons form forms))
