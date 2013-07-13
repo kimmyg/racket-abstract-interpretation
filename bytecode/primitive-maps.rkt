@@ -82,7 +82,11 @@
        (eval name ns)))
 
 (define (primitive-id->value id [ns default-namespace])
-  (primitive-name->value (primitive-id->name id) ns))
+  (match (primitive-id->name id)
+    ['variable-reference->module-declaration-inspector
+     (λ (_) (current-code-inspector))]
+    [name
+     (primitive-name->value name ns)]))
 
 (define (primitive-value->id value [ns default-namespace])
   (primitive-name->id (primitive-value->name value) ns))
