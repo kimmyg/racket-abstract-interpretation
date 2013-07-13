@@ -109,7 +109,13 @@ Racket has grown atop a capable VM written in C which provides continuation-hand
 
 For example, \texttt{letrec} compiles to a \texttt{let-void} form with an \texttt{install-value} subform. [verify]
 
-The extensive VM presents a difficulty in analyzing true and complete Racket. An analyzer must soundly emulate much of the behavior of the VM. 
+The extensive VM presents a difficulty in analyzing true and complete Racket. An analyzer must soundly emulate much of the behavior of the VM.
+
+Aside from typical Scheme constructs, Racket has a small set of constructs that provide a base for its vast array of features.
+- impersonators and chaperones
+- everything in the "Reflection and Security" section
+
+ 
 
 \appendix
 \section{Appendix Title}
